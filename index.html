@@ -12,7 +12,39 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app">
+  <!-- PIN LOCK SCREEN -->
+  <div id="pin-screen">
+    <div class="pin-wrap">
+      <div class="pin-logo-mark">S</div>
+      <div class="pin-title">SpendAgent</div>
+      <div class="pin-sub" id="pin-sub">Enter your PIN to continue</div>
+      <div class="pin-dots" id="pin-dots">
+        <span class="dot" id="d0"></span>
+        <span class="dot" id="d1"></span>
+        <span class="dot" id="d2"></span>
+        <span class="dot" id="d3"></span>
+      </div>
+      <div class="pin-error" id="pin-error"></div>
+      <div class="pin-pad">
+        <button class="pin-key" onclick="pinKey('1')">1</button>
+        <button class="pin-key" onclick="pinKey('2')">2</button>
+        <button class="pin-key" onclick="pinKey('3')">3</button>
+        <button class="pin-key" onclick="pinKey('4')">4</button>
+        <button class="pin-key" onclick="pinKey('5')">5</button>
+        <button class="pin-key" onclick="pinKey('6')">6</button>
+        <button class="pin-key" onclick="pinKey('7')">7</button>
+        <button class="pin-key" onclick="pinKey('8')">8</button>
+        <button class="pin-key" onclick="pinKey('9')">9</button>
+        <button class="pin-key pin-key-empty"></button>
+        <button class="pin-key" onclick="pinKey('0')">0</button>
+        <button class="pin-key pin-key-del" onclick="pinDel()">&#x232B;</button>
+      </div>
+      <div class="pin-hint" id="pin-hint"></div>
+    </div>
+  </div>
+
+  <div class="app" id="main-app" style="display:none">
+
     <div class="header">
       <div class="logo">
         <div class="logo-mark">S</div>
@@ -156,5 +188,6 @@ Examples:
 
   <div class="toast" id="toast"></div>
   <script src="app.js"></script>
+  </div><!-- /main-app -->
 </body>
 </html>

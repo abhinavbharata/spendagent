@@ -301,3 +301,85 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   .metric-value { font-size: 18px; }
   .nav-btn { font-size: 11px; }
 }
+
+/* ── PIN Screen ─────────────────────────────────────────────────────────────── */
+#pin-screen {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+  font-family: var(--font);
+}
+.pin-wrap {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0; padding: 2rem 1rem; width: 100%; max-width: 320px;
+}
+.pin-logo-mark {
+  width: 48px; height: 48px;
+  background: var(--accent); border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 22px; color: #fff;
+  margin-bottom: 1rem;
+}
+.pin-title {
+  font-size: 20px; font-weight: 600; letter-spacing: -0.3px;
+  color: var(--text); margin-bottom: 6px;
+}
+.pin-sub {
+  font-size: 13px; color: var(--muted); margin-bottom: 2rem;
+  font-family: var(--mono); text-align: center;
+}
+.pin-dots {
+  display: flex; gap: 16px; margin-bottom: 12px;
+}
+.dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid var(--border);
+  background: transparent;
+  transition: all .15s;
+}
+.dot.filled {
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: scale(1.1);
+}
+.dot.shake {
+  border-color: var(--red);
+  background: var(--red);
+}
+.pin-error {
+  font-size: 12px; color: var(--red);
+  font-family: var(--mono); min-height: 18px;
+  margin-bottom: 1.5rem; text-align: center;
+}
+.pin-pad {
+  display: grid; grid-template-columns: repeat(3, 72px);
+  gap: 12px;
+}
+.pin-key {
+  width: 72px; height: 72px; border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text); font-size: 22px; font-weight: 400;
+  font-family: var(--font);
+  cursor: pointer; transition: all .1s;
+  display: flex; align-items: center; justify-content: center;
+}
+.pin-key:hover { background: var(--surface2); }
+.pin-key:active { transform: scale(.93); background: var(--surface2); }
+.pin-key-empty { background: transparent; border: none; cursor: default; pointer-events: none; }
+.pin-key-del { font-size: 18px; }
+.pin-hint {
+  margin-top: 1.5rem; font-size: 12px;
+  color: var(--muted); font-family: var(--mono);
+  text-align: center; line-height: 1.7;
+}
+
+@keyframes shake {
+  0%,100%{transform:translateX(0)}
+  20%{transform:translateX(-8px)}
+  40%{transform:translateX(8px)}
+  60%{transform:translateX(-6px)}
+  80%{transform:translateX(6px)}
+}
+.pin-dots.shaking { animation: shake .4s ease; }

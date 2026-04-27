@@ -330,5 +330,137 @@ function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
-loadData();
+// ── Init (called from PIN DOMContentLoaded listener) ────────────────────────────
+
+// ── PIN Lock ──────────────────────────────────────────────────────────────────
+const PIN_KEY   = 'spendagent-pin';
+const PIN_LEN   = 4;
+const SESSION_KEY = 'spendagent-unlocked';
+let pinBuffer   = '';
+let pinMode     = 'verify'; // 'set' | 'verify'
+
+function initPin() {
+  // Already unlocked this session?
+  if (sessionStorage.getItem(SESSION_KEY) === '1') { unlockApp(); return; }
+
+  const saved = localStorage.getItem(PIN_KEY);
+  if (!saved) {
+    pinMode = 'set';
+    document.getElementById('pin-sub').textContent = 'Create a 4-digit PIN';
+    document.getElementById('pin-hint').textContent = 'You\'ll use this every time you open the app.';
+  } else {
+    pinMode = 'verify';
+    document.getElementById('pin-sub').textContent = 'Enter your PIN to continue';
+  }
+  document.getElementById('pin-screen').style.display = 'flex';
+}
+
+function pinKey(digit) {
+  if (pinBuffer.length >= PIN_LEN) return;
+  pinBuffer += digit;
+  updateDots();
+  if (pinBuffer.length === PIN_LEN) {
+    setTimeout(() => handlePinComplete(), 120);
+  }
+}
+
+function pinDel() {
+  pinBuffer = pinBuffer.slice(0, -1);
+  updateDots();
+  clearPinError();
+}
+
+function updateDots() {
+  for (let i = 0; i < PIN_LEN; i++) {
+    const d = document.getElementById('d' + i);
+    d.classList.toggle('filled', i < pinBuffer.length);
+    d.classList.remove('shake');
+  }
+}
+
+function handlePinComplete() {
+  if (pinMode === 'set') {
+    // Hash and save
+    const hashed = simpleHash(pinBuffer);
+    localStorage.setItem(PIN_KEY, hashed);
+    pinBuffer = '';
+    updateDots();
+    pinMode = 'verify';
+    document.getElementById('pin-sub').textContent = 'PIN set! Enter it again to unlock';
+    document.getElementById('pin-hint').textContent = '';
+    showPinError('PIN saved ✓', '#4ade80');
+    setTimeout(() => clearPinError(), 1200);
+  } else {
+    const hashed = simpleHash(pinBuffer);
+    const saved  = localStorage.getItem(PIN_KEY);
+    if (hashed === saved) {
+      sessionStorage.setItem(SESSION_KEY, '1');
+      unlockApp();
+    } else {
+      pinBuffer = '';
+      updateDots();
+      showPinError('Incorrect PIN — try again');
+      shakeDots();
+    }
+  }
+}
+
+function unlockApp() {
+  document.getElementById('pin-screen').style.display = 'none';
+  document.getElementById('main-app').style.display   = 'block';
+}
+
+function showPinError(msg, color) {
+  const el = document.getElementById('pin-error');
+  el.textContent = msg;
+  el.style.color = color || 'var(--red)';
+}
+
+function clearPinError() {
+  document.getElementById('pin-error').textContent = '';
+}
+
+function shakeDots() {
+  const el = document.getElementById('pin-dots');
+  el.classList.add('shaking');
+  for (let i = 0; i < PIN_LEN; i++) document.getElementById('d' + i).classList.add('shake');
+  setTimeout(() => {
+    el.classList.remove('shaking');
+    for (let i = 0; i < PIN_LEN; i++) document.getElementById('d' + i).classList.remove('shake');
+  }, 500);
+}
+
+// Simple deterministic hash (not cryptographic, but fine for local PIN)
+function simpleHash(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16);
+}
+
+// Add "Change PIN" to settings tab
+document.addEventListener('DOMContentLoaded', () => {
+  loadData();
+  const settingsPanel = document.getElementById('tab-settings');
+  if (settingsPanel) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-title">Change PIN</div>
+      <p class="hint-text">Clears your current PIN so you can set a new one on next reload.</p>
+      <div style="margin-top:10px">
+        <button class="btn danger-btn" onclick="resetPin()">Reset PIN</button>
+      </div>`;
+    settingsPanel.appendChild(card);
+  }
+  initPin();
+});
+
+function resetPin() {
+  if (!confirm('Reset your PIN? You\'ll be asked to create a new one on next page load.')) return;
+  localStorage.removeItem(PIN_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
+  showToast('PIN reset — reload to set a new one');
+}
