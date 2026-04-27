@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f0f11">
+  <title>SpendAgent</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div class="logo">
+        <div class="logo-mark">S</div>
+        <div>
+          <div class="logo-text">SpendAgent</div>
+          <div class="logo-sub">powered by claude</div>
+        </div>
+      </div>
+      <div class="tx-count" id="tx-badge">0 transactions</div>
+    </div>
+
+    <div class="nav">
+      <button class="nav-btn active" onclick="switchTab('dashboard',this)">Dashboard</button>
+      <button class="nav-btn" onclick="switchTab('add',this)">Add</button>
+      <button class="nav-btn" onclick="switchTab('insights',this)">Insights</button>
+      <button class="nav-btn" onclick="switchTab('setup',this)">Setup</button>
+      <button class="nav-btn" onclick="switchTab('settings',this)">Settings</button>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="tab-dashboard" class="panel active">
+      <div class="month-chips" id="month-chips"></div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-label">Total spent</div>
+          <div class="metric-value" id="m-total">$0</div>
+          <div class="metric-delta" id="m-delta">—</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Transactions</div>
+          <div class="metric-value" id="m-count">0</div>
+          <div class="metric-delta" id="m-cdelta">—</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Top category</div>
+          <div class="metric-value" style="font-size:15px;padding-top:6px" id="m-top">—</div>
+          <div class="metric-delta" id="m-tdelta">—</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Spending by category</div>
+        <div id="cat-bars">
+          <div class="empty"><div class="empty-icon">📊</div><p>No transactions yet.<br>Add notifications to see your breakdown.</p></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Recent transactions</div>
+        <div id="txn-list">
+          <div class="empty"><div class="empty-icon">🧾</div><p>Your parsed transactions will appear here.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADD NOTIFICATIONS -->
+    <div id="tab-add" class="panel">
+      <div class="card">
+        <div class="card-title">Paste bank notifications</div>
+        <textarea id="notif-input" placeholder="Paste one or more bank SMS / push / email alerts here.
+
+Examples:
+• Your account was debited $45.00 at Amazon on Apr 22.
+• Transaction alert: $12.50 at Starbucks. Available balance: $1,204.
+• Chase: $67.80 spent at Whole Foods on 04/24/2026."></textarea>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="parseAndSave()">Parse &amp; save</button>
+          <button class="btn" onclick="document.getElementById('notif-input').value=''">Clear</button>
+        </div>
+        <div class="loader" id="parse-loader"><div class="spinner"></div>Parsing with AI…</div>
+      </div>
+      <div class="drop-zone" onclick="document.getElementById('file-in').click()">
+        <div style="font-size:28px">📂</div>
+        <p>Click to upload a .txt or .csv file<br>from your iOS Shortcut or iMazing export</p>
+        <input type="file" id="file-in" accept=".txt,.csv" style="display:none" onchange="handleFile(this)">
+      </div>
+      <div class="card">
+        <div class="card-title">Storage status</div>
+        <div id="saved-count" class="mono-text">Loading…</div>
+        <div style="margin-top:12px">
+          <button class="btn danger-btn" onclick="clearAll()">Clear all data</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- INSIGHTS -->
+    <div id="tab-insights" class="panel">
+      <div class="card">
+        <div class="card-title">AI analysis</div>
+        <div id="insights-body">
+          <div class="empty"><div class="empty-icon">🤖</div><p>Click below to get an AI-powered<br>analysis of your spending patterns.</p></div>
+        </div>
+      </div>
+      <div class="loader" id="insight-loader"><div class="spinner"></div>Analyzing your spending…</div>
+      <button class="btn btn-primary full-btn" onclick="getInsights()">Analyze my spending ↗</button>
+    </div>
+
+    <!-- SHORTCUT SETUP -->
+    <div id="tab-setup" class="panel">
+      <div class="shortcut-box">
+        <div class="shortcut-title">iOS Shortcut setup</div>
+        <div class="shortcut-body">A one-tap Share Sheet shortcut that captures any bank notification and appends it to a file — ready to upload here anytime.</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Step by step</div>
+        <div class="step"><div class="step-num">1</div><div class="step-text">Open the <code>Shortcuts</code> app on your iPhone and tap <code>+</code> to create a new shortcut.</div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-text">Tap <code>Add action</code> → search <code>Receive input from Share Sheet</code> → select it. Set input type to <code>Text</code>.</div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-text">Tap <code>+</code> again → search <code>Append to File</code> → select it. Set file name to <code>bank-notifications.txt</code>, location to <code>iCloud Drive</code>.</div></div>
+        <div class="step"><div class="step-num">4</div><div class="step-text">Enable <code>Make New Line</code> so each notification is on its own line.</div></div>
+        <div class="step"><div class="step-num">5</div><div class="step-text">Tap the shortcut name at top and rename it <code>Save bank notification</code>. Tap <code>Done</code>.</div></div>
+        <div class="step"><div class="step-num">6</div><div class="step-text">Test: open any bank SMS → long-press → <code>Share</code> → tap <code>Save bank notification</code>. Check iCloud Drive for the file.</div></div>
+        <div class="step"><div class="step-num">7</div><div class="step-text">Weekly: upload <code>bank-notifications.txt</code> from iCloud Drive via the <strong>Add</strong> tab above.</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">What you can capture</div>
+        <div class="insight"><div class="insight-dot" style="background:#7c6dfa"></div><div class="insight-text"><strong>SMS alerts</strong> — long-press message → Share → Save bank notification</div></div>
+        <div class="insight"><div class="insight-dot" style="background:#4ecdc4"></div><div class="insight-text"><strong>Push notifications</strong> — swipe down banner → share icon → Save bank notification</div></div>
+        <div class="insight"><div class="insight-dot" style="background:#fbbf24"></div><div class="insight-text"><strong>Email alerts</strong> — open email → share icon → Save bank notification</div></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="tab-settings" class="panel">
+      <div class="card">
+        <div class="card-title">Anthropic API key</div>
+        <p class="hint-text">Required for AI parsing and insights. Your key is stored only in your browser — never sent anywhere except the Anthropic API.</p>
+        <input type="password" id="api-key-input" placeholder="sk-ant-…" style="width:100%;margin-top:10px">
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn btn-primary" onclick="saveApiKey()">Save key</button>
+          <button class="btn" onclick="clearApiKey()">Clear key</button>
+        </div>
+        <div id="key-status" class="mono-text" style="margin-top:8px"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">How to get an API key</div>
+        <div class="step"><div class="step-num">1</div><div class="step-text">Go to <a href="https://console.anthropic.com" target="_blank" class="link">console.anthropic.com</a> and sign up or log in.</div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-text">Click <code>API Keys</code> in the left sidebar → <code>Create Key</code>.</div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-text">Copy the key and paste it above. It starts with <code>sk-ant-</code>.</div></div>
+        <div class="step"><div class="step-num">4</div><div class="step-text">The free tier includes enough credits to parse hundreds of notifications per month.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
