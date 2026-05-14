@@ -1,0 +1,494 @@
+// SpendAgent v2 — app.js
+// Supports both debits (expenses) and credits (income/reimbursements)
+
+const STORAGE_KEY   = 'spendagent-txns';
+const API_KEY_KEY   = 'spendagent-apikey';
+const PIN_KEY       = 'spendagent-pin';
+const SESSION_KEY   = 'spendagent-unlocked';
+const MONTHS        = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const CAT_COLORS    = ['#7c6dfa','#4ecdc4','#fbbf24','#f87171','#4ade80','#fb923c','#e879f9','#38bdf8'];
+const CAT_ICONS     = {
+  Dining:'🍽', Groceries:'🛒', Transport:'⛽', Shopping:'📦',
+  Health:'💊', Utilities:'💡', Entertainment:'🎬',
+  Transfer:'💸', Reimbursement:'🤝', Income:'💰', Other:'💳'
+};
+
+let transactions = [];
+let selectedMonth = null;
+
+// ── Storage ───────────────────────────────────────────────────────────────────
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    transactions = raw ? JSON.parse(raw) : [];
+  } catch(e) { transactions = []; }
+  renderAll();
+  loadApiKeyStatus();
+}
+
+function saveData() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions)); }
+  catch(e) { showToast('Storage full — clear old data', true); }
+}
+
+// ── API key ───────────────────────────────────────────────────────────────────
+
+function getApiKey() { return localStorage.getItem(API_KEY_KEY) || ''; }
+
+function saveApiKey() {
+  const key = document.getElementById('api-key-input').value.trim();
+  if (!key.startsWith('sk-ant-')) { showToast('Key must start with sk-ant-', true); return; }
+  localStorage.setItem(API_KEY_KEY, key);
+  document.getElementById('api-key-input').value = '';
+  loadApiKeyStatus();
+  showToast('API key saved');
+}
+
+function clearApiKey() {
+  localStorage.removeItem(API_KEY_KEY);
+  document.getElementById('api-key-input').value = '';
+  loadApiKeyStatus();
+  showToast('API key cleared');
+}
+
+function loadApiKeyStatus() {
+  const key = getApiKey();
+  const el = document.getElementById('key-status');
+  if (!el) return;
+  el.textContent = key ? '✓ Key saved: ' + key.slice(0,14) + '…' : 'No key saved yet.';
+  el.style.color  = key ? '#4ade80' : '#6b6b7a';
+}
+
+// ── Months ────────────────────────────────────────────────────────────────────
+
+function getAvailableMonths() {
+  const s = new Set();
+  transactions.forEach(t => { if (t.date) s.add(t.date.slice(0,7)); });
+  return [...s].sort().reverse();
+}
+
+function filteredTxns() {
+  if (!selectedMonth) return transactions;
+  return transactions.filter(t => t.date && t.date.startsWith(selectedMonth));
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+
+function renderAll() {
+  renderMonthChips();
+  renderDashboard();
+  updateBadge();
+  updateSavedCount();
+}
+
+function updateBadge() {
+  const el = document.getElementById('tx-badge');
+  if (el) el.textContent = transactions.length + ' transaction' + (transactions.length !== 1 ? 's' : '');
+}
+
+function updateSavedCount() {
+  const el = document.getElementById('saved-count');
+  if (el) el.textContent = transactions.length + ' transactions saved in browser storage.';
+}
+
+function renderMonthChips() {
+  const months = getAvailableMonths();
+  const el = document.getElementById('month-chips');
+  if (!el) return;
+  if (!months.length) { el.innerHTML = ''; return; }
+  if (!selectedMonth || !months.includes(selectedMonth)) selectedMonth = months[0];
+  el.innerHTML = months.map(m => {
+    const [y, mo] = m.split('-');
+    const label = MONTHS[parseInt(mo)-1] + ' ' + y;
+    return `<button class="chip ${m===selectedMonth?'active':''}" onclick="selectMonth('${m}',this)">${label}</button>`;
+  }).join('');
+}
+
+function selectMonth(m, el) {
+  selectedMonth = m;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderDashboard();
+}
+
+function renderDashboard() {
+  const txns = filteredTxns();
+  const debits  = txns.filter(t => t.type === 'debit');
+  const credits = txns.filter(t => t.type === 'credit');
+
+  const totalSpent    = debits.reduce((s,t)  => s + (t.amount||0), 0);
+  const totalReceived = credits.reduce((s,t) => s + (t.amount||0), 0);
+  const netFlow       = totalReceived - totalSpent;
+
+  // Metrics
+  document.getElementById('m-total').textContent   = '$' + totalSpent.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  document.getElementById('m-credit').textContent  = '$' + totalReceived.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  document.getElementById('m-net').textContent     = (netFlow >= 0 ? '+' : '') + '$' + Math.abs(netFlow).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  document.getElementById('m-net').style.color     = netFlow >= 0 ? '#4ade80' : '#f87171';
+  document.getElementById('m-count').textContent   = txns.length;
+
+  // Top spending category
+  const cats = {};
+  debits.forEach(t => { const c = t.category||'Other'; cats[c]=(cats[c]||0)+(t.amount||0); });
+  const sorted = Object.entries(cats).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('m-top').textContent     = sorted.length ? sorted[0][0] : '—';
+  document.getElementById('m-tdelta').textContent  = sorted.length ? '$'+sorted[0][1].toFixed(2) : '';
+
+  // Category bars (debits only)
+  const barsEl = document.getElementById('cat-bars');
+  if (!sorted.length) {
+    barsEl.innerHTML = '<div class="empty"><div class="empty-icon">📊</div><p>No expenses yet.<br>Add notifications to see your breakdown.</p></div>';
+  } else {
+    const max = sorted[0][1];
+    barsEl.innerHTML = sorted.map(([cat,amt],i) => `
+      <div class="bar-row">
+        <div class="bar-cat">${cat}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.round(amt/max*100)}%;background:${CAT_COLORS[i%CAT_COLORS.length]}"></div></div>
+        <div class="bar-amt">$${amt.toFixed(0)}</div>
+      </div>`).join('');
+  }
+
+  // Recent transactions (both debits and credits)
+  const txnEl = document.getElementById('txn-list');
+  const recent = [...txns].reverse().slice(0,12);
+  if (!recent.length) {
+    txnEl.innerHTML = '<div class="empty"><div class="empty-icon">🧾</div><p>Your parsed transactions will appear here.</p></div>';
+  } else {
+    txnEl.innerHTML = recent.map(t => {
+      const isCredit = t.type === 'credit';
+      const amtColor = isCredit ? '#4ade80' : '#f87171';
+      const amtPrefix = isCredit ? '+' : '-';
+      return `
+        <div class="txn">
+          <div class="txn-icon">${CAT_ICONS[t.category]||'💳'}</div>
+          <div style="flex:1;min-width:0">
+            <div class="txn-name">${escHtml(t.merchant||'Unknown')}</div>
+            <div class="txn-meta">${t.date||''} · ${isCredit?'Credit':'Debit'}</div>
+          </div>
+          <div class="txn-right">
+            <div class="txn-cat">${escHtml(t.category||'Other')}</div>
+            <div class="txn-amt" style="color:${amtColor}">${amtPrefix}$${(t.amount||0).toFixed(2)}</div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // Credits section
+  const credEl = document.getElementById('credit-list');
+  if (credEl) {
+    if (!credits.length) {
+      credEl.innerHTML = '<div class="empty"><div class="empty-icon">💰</div><p>No credits yet this month.</p></div>';
+    } else {
+      credEl.innerHTML = credits.map(t => `
+        <div class="txn">
+          <div class="txn-icon">${CAT_ICONS[t.category]||'💰'}</div>
+          <div style="flex:1;min-width:0">
+            <div class="txn-name">${escHtml(t.merchant||'Unknown')}</div>
+            <div class="txn-meta">${t.date||''}</div>
+          </div>
+          <div class="txn-right">
+            <div class="txn-cat">${escHtml(t.category||'Other')}</div>
+            <div class="txn-amt" style="color:#4ade80">+$${(t.amount||0).toFixed(2)}</div>
+          </div>
+        </div>`).join('');
+    }
+  }
+}
+
+// ── Parse notifications ───────────────────────────────────────────────────────
+
+async function parseAndSave() {
+  const text = document.getElementById('notif-input').value.trim();
+  if (!text) { showToast('Paste some notifications first', true); return; }
+
+  const apiKey = getApiKey();
+  if (!apiKey) { showToast('Add your API key in Settings first', true); switchTab('settings', document.querySelectorAll('.nav-btn')[4]); return; }
+
+  const loader = document.getElementById('parse-loader');
+  loader.classList.add('active');
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        system: `You are a bank notification parser. Extract ALL financial transactions from notification text — both debits (money going out) AND credits (money coming in).
+
+Return ONLY a valid JSON array — no markdown, no explanation, nothing else.
+
+Each object must have:
+- merchant: string (who sent/received money, cleaned up — e.g. "Starbucks", "Manogna Deep Andalu", "Bank of America")
+- amount: number (positive float, e.g. 26.67)
+- date: string YYYY-MM-DD (use today's year ${new Date().getFullYear()} if year missing)
+- type: "debit" for money going OUT (purchases, payments, withdrawals), "credit" for money coming IN (transfers received, reimbursements, deposits, refunds)
+- category: one of exactly these:
+  For debits: Dining, Groceries, Transport, Shopping, Health, Utilities, Entertainment, Transfer, Other
+  For credits: Reimbursement (friends paying you back), Income (salary/wages), Transfer (bank transfers in), Other
+
+Examples:
+- "BofA: Manogna sent you $26.67 for splitwise" → type: "credit", category: "Reimbursement"
+- "Your account debited $45 at Amazon" → type: "debit", category: "Shopping"
+- "You sent $120 to John" → type: "debit", category: "Transfer"
+- "Refund of $30 from Uber" → type: "credit", category: "Other"
+
+If no transactions found, return [].`,
+        messages: [{ role: 'user', content: text }]
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({}));
+      throw new Error(err.error?.message || 'API error ' + res.status);
+    }
+
+    const data = await res.json();
+    const raw  = (data.content?.[0]?.text || '[]').replace(/```json|```/g,'').trim();
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed) || !parsed.length) {
+      showToast('No transactions found — check the text', true);
+    } else {
+      parsed.forEach(t => { t.id = Date.now() + '-' + Math.random().toString(36).slice(2); });
+      transactions = [...transactions, ...parsed];
+      saveData();
+      renderAll();
+      document.getElementById('notif-input').value = '';
+      const debits  = parsed.filter(t => t.type==='debit').length;
+      const credits = parsed.filter(t => t.type==='credit').length;
+      showToast(`✓ Saved: ${debits} expense${debits!==1?'s':''}, ${credits} credit${credits!==1?'s':''}`);
+    }
+  } catch(e) {
+    console.error(e);
+    showToast('Error: ' + (e.message||'Try again'), true);
+  }
+
+  loader.classList.remove('active');
+}
+
+async function handleFile(input) {
+  const file = input.files[0]; if (!file) return;
+  const text = await file.text();
+  document.getElementById('notif-input').value = text.slice(0,8000);
+  switchTab('add', document.querySelectorAll('.nav-btn')[1]);
+  showToast('File loaded — tap Parse & save');
+  input.value = '';
+}
+
+// ── AI Insights ───────────────────────────────────────────────────────────────
+
+async function getInsights() {
+  if (!transactions.length) { showToast('Add some transactions first', true); return; }
+
+  const apiKey = getApiKey();
+  if (!apiKey) { showToast('Add your API key in Settings first', true); switchTab('settings', document.querySelectorAll('.nav-btn')[4]); return; }
+
+  const loader = document.getElementById('insight-loader');
+  loader.classList.add('active');
+  document.getElementById('insights-body').innerHTML = '';
+
+  const txns    = filteredTxns();
+  const debits  = txns.filter(t=>t.type==='debit');
+  const credits = txns.filter(t=>t.type==='credit');
+  const totalSpent    = debits.reduce((s,t)=>s+(t.amount||0),0);
+  const totalReceived = credits.reduce((s,t)=>s+(t.amount||0),0);
+  const summary = txns.map(t=>`${t.date}|${t.type}|${t.merchant}|$${t.amount}|${t.category}`).join('\n');
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        system: `You are a personal finance analyst. Analyze both spending (debits) and income/credits. Return ONLY a JSON array of insight objects — no markdown.
+Each: { "color": one of "#7c6dfa","#4ecdc4","#fbbf24","#f87171","#4ade80", "text": "insight with <strong>key figure</strong> highlighted" }
+Give 5 specific insights covering: top spending categories, notable credits/reimbursements, net cash flow, trends, and one actionable saving tip. Reference real merchants and amounts.`,
+        messages: [{
+          role: 'user',
+          content: `Spent: $${totalSpent.toFixed(2)} | Received: $${totalReceived.toFixed(2)} | Net: $${(totalReceived-totalSpent).toFixed(2)}\n\nTransactions:\n${summary}`
+        }]
+      })
+    });
+
+    if (!res.ok) throw new Error('API error ' + res.status);
+    const data    = await res.json();
+    const raw     = (data.content?.[0]?.text||'[]').replace(/```json|```/g,'').trim();
+    const insights = JSON.parse(raw);
+
+    document.getElementById('insights-body').innerHTML = insights.map(i=>
+      `<div class="insight">
+        <div class="insight-dot" style="background:${escHtml(i.color)}"></div>
+        <div class="insight-text">${i.text}</div>
+      </div>`
+    ).join('');
+  } catch(e) {
+    document.getElementById('insights-body').innerHTML = '<div class="empty"><p>Could not load insights — check your API key and try again.</p></div>';
+  }
+  loader.classList.remove('active');
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function clearAll() {
+  if (!confirm('Delete all saved transactions? This cannot be undone.')) return;
+  transactions = []; selectedMonth = null;
+  try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
+  renderAll();
+  showToast('All data cleared');
+}
+
+function showToast(msg, isError=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.borderColor = isError ? '#f87171' : '#4ade80';
+  t.style.color       = isError ? '#f87171' : '#4ade80';
+  t.style.display     = 'block';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=>{ t.style.display='none'; }, 3000);
+}
+
+function switchTab(name, el) {
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  const panel = document.getElementById('tab-'+name);
+  if (panel) panel.classList.add('active');
+  if (el) el.classList.add('active');
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── PIN Lock ──────────────────────────────────────────────────────────────────
+
+const PIN_LEN = 4;
+let pinBuffer = '';
+let pinMode   = 'verify';
+
+function initPin() {
+  if (sessionStorage.getItem(SESSION_KEY) === '1') { unlockApp(); return; }
+  const saved = localStorage.getItem(PIN_KEY);
+  if (!saved) {
+    pinMode = 'set';
+    document.getElementById('pin-sub').textContent  = 'Create a 4-digit PIN';
+    document.getElementById('pin-hint').textContent = 'You\'ll use this every time you open the app.';
+  } else {
+    pinMode = 'verify';
+    document.getElementById('pin-sub').textContent = 'Enter your PIN to continue';
+  }
+  document.getElementById('pin-screen').style.display = 'flex';
+}
+
+function pinKey(digit) {
+  if (pinBuffer.length >= PIN_LEN) return;
+  pinBuffer += digit;
+  updateDots();
+  if (pinBuffer.length === PIN_LEN) setTimeout(()=>handlePinComplete(), 120);
+}
+
+function pinDel() {
+  pinBuffer = pinBuffer.slice(0,-1);
+  updateDots();
+  clearPinError();
+}
+
+function updateDots() {
+  for (let i=0;i<PIN_LEN;i++) {
+    const d = document.getElementById('d'+i);
+    d.classList.toggle('filled', i<pinBuffer.length);
+    d.classList.remove('shake');
+  }
+}
+
+function handlePinComplete() {
+  if (pinMode === 'set') {
+    localStorage.setItem(PIN_KEY, simpleHash(pinBuffer));
+    pinBuffer = '';
+    updateDots();
+    pinMode = 'verify';
+    document.getElementById('pin-sub').textContent = 'PIN set! Enter it again to unlock';
+    showPinError('PIN saved ✓','#4ade80');
+    setTimeout(()=>clearPinError(), 1200);
+  } else {
+    if (simpleHash(pinBuffer) === localStorage.getItem(PIN_KEY)) {
+      sessionStorage.setItem(SESSION_KEY,'1');
+      unlockApp();
+    } else {
+      pinBuffer = '';
+      updateDots();
+      showPinError('Incorrect PIN — try again');
+      shakeDots();
+    }
+  }
+}
+
+function unlockApp() {
+  document.getElementById('pin-screen').style.display = 'none';
+  document.getElementById('main-app').style.display   = 'block';
+}
+
+function showPinError(msg, color) {
+  const el = document.getElementById('pin-error');
+  el.textContent = msg;
+  el.style.color = color||'var(--red)';
+}
+
+function clearPinError() { document.getElementById('pin-error').textContent=''; }
+
+function shakeDots() {
+  const el = document.getElementById('pin-dots');
+  el.classList.add('shaking');
+  for (let i=0;i<PIN_LEN;i++) document.getElementById('d'+i).classList.add('shake');
+  setTimeout(()=>{
+    el.classList.remove('shaking');
+    for (let i=0;i<PIN_LEN;i++) document.getElementById('d'+i).classList.remove('shake');
+  },500);
+}
+
+function simpleHash(str) {
+  let h = 0x811c9dc5;
+  for (let i=0;i<str.length;i++) { h ^= str.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; }
+  return h.toString(16);
+}
+
+function resetPin() {
+  if (!confirm('Reset your PIN? You\'ll be asked to create a new one on next page load.')) return;
+  localStorage.removeItem(PIN_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
+  showToast('PIN reset — reload to set a new one');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadData();
+
+  // Add Change PIN card to settings
+  const settingsPanel = document.getElementById('tab-settings');
+  if (settingsPanel) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-title">Change PIN</div>
+      <p class="hint-text">Clears your current PIN so you can set a new one on next reload.</p>
+      <div style="margin-top:10px">
+        <button class="btn danger-btn" onclick="resetPin()">Reset PIN</button>
+      </div>`;
+    settingsPanel.appendChild(card);
+  }
+
+  initPin();
+});

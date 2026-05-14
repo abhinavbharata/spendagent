@@ -12,7 +12,8 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- PIN LOCK SCREEN -->
+
+  <!-- PIN LOCK -->
   <div id="pin-screen">
     <div class="pin-wrap">
       <div class="pin-logo-mark">S</div>
@@ -37,7 +38,7 @@
         <button class="pin-key" onclick="pinKey('9')">9</button>
         <button class="pin-key pin-key-empty"></button>
         <button class="pin-key" onclick="pinKey('0')">0</button>
-        <button class="pin-key pin-key-del" onclick="pinDel()">&#x232B;</button>
+        <button class="pin-key pin-key-del" onclick="pinDel()">⌫</button>
       </div>
       <div class="pin-hint" id="pin-hint"></div>
     </div>
@@ -59,117 +60,207 @@
     <div class="nav">
       <button class="nav-btn active" onclick="switchTab('dashboard',this)">Dashboard</button>
       <button class="nav-btn" onclick="switchTab('add',this)">Add</button>
-      <button class="nav-btn" onclick="switchTab('insights',this)">Insights</button>
-      <button class="nav-btn" onclick="switchTab('setup',this)">Setup</button>
-      <button class="nav-btn" onclick="switchTab('settings',this)">Settings</button>
+      <button class="nav-btn" onclick="switchTab('savings',this)">Savings</button>
+      <button class="nav-btn" onclick="switchTab('investments',this)">Invest</button>
+      <button class="nav-btn" onclick="switchTab('insights',this)">AI</button>
+      <button class="nav-btn" onclick="switchTab('settings',this)">⚙</button>
     </div>
 
     <!-- DASHBOARD -->
     <div id="tab-dashboard" class="panel active">
       <div class="month-chips" id="month-chips"></div>
+
       <div class="metrics">
-        <div class="metric">
+        <div class="metric metric-red">
           <div class="metric-label">Total spent</div>
-          <div class="metric-value" id="m-total">$0</div>
-          <div class="metric-delta" id="m-delta">—</div>
+          <div class="metric-value" id="m-total">$0.00</div>
+          <div class="metric-delta" id="m-delta">debits this month</div>
+        </div>
+        <div class="metric metric-green">
+          <div class="metric-label">Total received</div>
+          <div class="metric-value" id="m-credit">$0.00</div>
+          <div class="metric-delta" id="m-cdelta">credits this month</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Net cash flow</div>
+          <div class="metric-value" id="m-net">$0.00</div>
+          <div class="metric-delta" id="m-ndelta">received − spent</div>
         </div>
         <div class="metric">
           <div class="metric-label">Transactions</div>
           <div class="metric-value" id="m-count">0</div>
-          <div class="metric-delta" id="m-cdelta">—</div>
+          <div class="metric-delta" id="m-cdelta2">this month</div>
         </div>
-        <div class="metric">
-          <div class="metric-label">Top category</div>
-          <div class="metric-value" style="font-size:15px;padding-top:6px" id="m-top">—</div>
-          <div class="metric-delta" id="m-tdelta">—</div>
+        <div class="metric metric-blue">
+          <div class="metric-label">SoFi savings</div>
+          <div class="metric-value" id="m-savings">$0.00</div>
+          <div class="metric-delta" id="m-sdelta">current balance</div>
+        </div>
+        <div class="metric metric-purple">
+          <div class="metric-label">Investments</div>
+          <div class="metric-value" id="m-invest">$0.00</div>
+          <div class="metric-delta" id="m-idelta">portfolio value</div>
         </div>
       </div>
+
       <div class="card">
         <div class="card-title">Spending by category</div>
-        <div id="cat-bars">
-          <div class="empty"><div class="empty-icon">📊</div><p>No transactions yet.<br>Add notifications to see your breakdown.</p></div>
-        </div>
+        <div id="cat-bars"><div class="empty"><div class="empty-icon">📊</div><p>No expenses yet.<br>Upload your BofA CSV to get started.</p></div></div>
       </div>
+
       <div class="card">
         <div class="card-title">Recent transactions</div>
-        <div id="txn-list">
-          <div class="empty"><div class="empty-icon">🧾</div><p>Your parsed transactions will appear here.</p></div>
-        </div>
+        <div id="txn-list"><div class="empty"><div class="empty-icon">🧾</div><p>Transactions will appear here.</p></div></div>
       </div>
     </div>
 
-    <!-- ADD NOTIFICATIONS -->
+    <!-- ADD -->
     <div id="tab-add" class="panel">
+      <div class="section-label">BofA — transactions</div>
       <div class="card">
-        <div class="card-title">Paste bank notifications</div>
-        <textarea id="notif-input" placeholder="Paste one or more bank SMS / push / email alerts here.
+        <div class="card-title">Upload CSV statement</div>
+        <p class="hint-text" style="margin-bottom:12px">Download your statement from BofA → Accounts → Statements → Export as CSV. Supports both checking and credit card CSVs.</p>
+        <div class="drop-zone" onclick="document.getElementById('bofa-csv').click()">
+          <div style="font-size:28px">📊</div>
+          <p>Tap to upload BofA CSV statement</p>
+          <input type="file" id="bofa-csv" accept=".csv" style="display:none" onchange="handleBofaCSV(this)">
+        </div>
+        <div class="loader" id="csv-loader"><div class="spinner"></div>Parsing CSV with AI…</div>
+      </div>
 
-Examples:
-• Your account was debited $45.00 at Amazon on Apr 22.
-• Transaction alert: $12.50 at Starbucks. Available balance: $1,204.
-• Chase: $67.80 spent at Whole Foods on 04/24/2026."></textarea>
-        <div class="btn-row">
-          <button class="btn btn-primary" onclick="parseAndSave()">Parse &amp; save</button>
+      <div class="card">
+        <div class="card-title">Paste notifications manually</div>
+        <textarea id="notif-input" placeholder="Paste bank SMS, Zelle alerts, or email notifications here.
+
+e.g. BofA: Manogna sent you $26.67 for splitwise"></textarea>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn btn-primary" onclick="parseNotifications()">Parse &amp; save</button>
           <button class="btn" onclick="document.getElementById('notif-input').value=''">Clear</button>
         </div>
         <div class="loader" id="parse-loader"><div class="spinner"></div>Parsing with AI…</div>
       </div>
-      <div class="drop-zone" onclick="document.getElementById('file-in').click()">
-        <div style="font-size:28px">📂</div>
-        <p>Click to upload a .txt or .csv file<br>from your iOS Shortcut or iMazing export</p>
-        <input type="file" id="file-in" accept=".txt,.csv" style="display:none" onchange="handleFile(this)">
-      </div>
+
       <div class="card">
         <div class="card-title">Storage status</div>
         <div id="saved-count" class="mono-text">Loading…</div>
-        <div style="margin-top:12px">
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" onclick="exportCSV()" style="font-size:12px">Export CSV backup</button>
           <button class="btn danger-btn" onclick="clearAll()">Clear all data</button>
         </div>
       </div>
     </div>
 
-    <!-- INSIGHTS -->
-    <div id="tab-insights" class="panel">
-      <div class="card">
-        <div class="card-title">AI analysis</div>
-        <div id="insights-body">
-          <div class="empty"><div class="empty-icon">🤖</div><p>Click below to get an AI-powered<br>analysis of your spending patterns.</p></div>
+    <!-- SAVINGS -->
+    <div id="tab-savings" class="panel">
+      <div class="section-label">SoFi — savings account</div>
+
+      <div class="metrics" style="grid-template-columns:repeat(3,1fr)">
+        <div class="metric metric-blue">
+          <div class="metric-label">Current balance</div>
+          <div class="metric-value" id="s-balance">$0.00</div>
+        </div>
+        <div class="metric metric-green">
+          <div class="metric-label">Interest earned</div>
+          <div class="metric-value" id="s-interest">$0.00</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Deposits</div>
+          <div class="metric-value" id="s-deposits">$0.00</div>
         </div>
       </div>
-      <div class="loader" id="insight-loader"><div class="spinner"></div>Analyzing your spending…</div>
-      <button class="btn btn-primary full-btn" onclick="getInsights()">Analyze my spending ↗</button>
+
+      <div class="card">
+        <div class="card-title">Upload SoFi CSV</div>
+        <p class="hint-text" style="margin-bottom:12px">Download from SoFi → Account → Statements → Export CSV.</p>
+        <div class="drop-zone" onclick="document.getElementById('sofi-csv').click()">
+          <div style="font-size:28px">🏦</div>
+          <p>Tap to upload SoFi savings CSV</p>
+          <input type="file" id="sofi-csv" accept=".csv" style="display:none" onchange="handleSofiCSV(this)">
+        </div>
+        <div class="loader" id="sofi-loader"><div class="spinner"></div>Processing SoFi data…</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Savings transactions</div>
+        <div id="savings-list"><div class="empty"><div class="empty-icon">🏦</div><p>Upload your SoFi CSV to see savings activity.</p></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Savings goal</div>
+        <div style="display:flex;gap:10px;margin-bottom:10px">
+          <input type="number" id="savings-goal" placeholder="Set a goal e.g. 10000" style="flex:1">
+          <button class="btn btn-primary" onclick="saveSavingsGoal()" style="white-space:nowrap">Set goal</button>
+        </div>
+        <div id="savings-goal-bar" style="display:none">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span class="mono-text" id="goal-label">$0 of $0</span>
+            <span class="mono-text" id="goal-pct">0%</span>
+          </div>
+          <div class="bar-track" style="height:10px"><div class="bar-fill" id="goal-fill" style="background:#4ecdc4"></div></div>
+        </div>
+      </div>
     </div>
 
-    <!-- SHORTCUT SETUP -->
-    <div id="tab-setup" class="panel">
-      <div class="shortcut-box">
-        <div class="shortcut-title">iOS Shortcut setup</div>
-        <div class="shortcut-body">A one-tap Share Sheet shortcut that captures any bank notification and appends it to a file — ready to upload here anytime.</div>
+    <!-- INVESTMENTS -->
+    <div id="tab-investments" class="panel">
+      <div class="section-label">Investment portfolio</div>
+
+      <div class="metrics" style="grid-template-columns:repeat(3,1fr)">
+        <div class="metric metric-purple">
+          <div class="metric-label">Portfolio value</div>
+          <div class="metric-value" id="i-value">$0.00</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Total invested</div>
+          <div class="metric-value" id="i-cost">$0.00</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Total P&amp;L</div>
+          <div class="metric-value" id="i-pl">$0.00</div>
+          <div class="metric-delta" id="i-pct"></div>
+        </div>
       </div>
+
       <div class="card">
-        <div class="card-title">Step by step</div>
-        <div class="step"><div class="step-num">1</div><div class="step-text">Open the <code>Shortcuts</code> app on your iPhone and tap <code>+</code> to create a new shortcut.</div></div>
-        <div class="step"><div class="step-num">2</div><div class="step-text">Tap <code>Add action</code> → search <code>Receive input from Share Sheet</code> → select it. Set input type to <code>Text</code>.</div></div>
-        <div class="step"><div class="step-num">3</div><div class="step-text">Tap <code>+</code> again → search <code>Append to File</code> → select it. Set file name to <code>bank-notifications.txt</code>, location to <code>iCloud Drive</code>.</div></div>
-        <div class="step"><div class="step-num">4</div><div class="step-text">Enable <code>Make New Line</code> so each notification is on its own line.</div></div>
-        <div class="step"><div class="step-num">5</div><div class="step-text">Tap the shortcut name at top and rename it <code>Save bank notification</code>. Tap <code>Done</code>.</div></div>
-        <div class="step"><div class="step-num">6</div><div class="step-text">Test: open any bank SMS → long-press → <code>Share</code> → tap <code>Save bank notification</code>. Check iCloud Drive for the file.</div></div>
-        <div class="step"><div class="step-num">7</div><div class="step-text">Weekly: upload <code>bank-notifications.txt</code> from iCloud Drive via the <strong>Add</strong> tab above.</div></div>
+        <div class="card-title">Add investment manually</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <input type="text"   id="i-ticker" placeholder="Ticker e.g. AAPL">
+          <input type="number" id="i-shares" placeholder="Shares e.g. 10">
+          <input type="number" id="i-cost-basis" placeholder="Avg cost per share">
+          <input type="number" id="i-current" placeholder="Current price">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="addInvestment()">Add holding</button>
+        </div>
       </div>
+
       <div class="card">
-        <div class="card-title">What you can capture</div>
-        <div class="insight"><div class="insight-dot" style="background:#7c6dfa"></div><div class="insight-text"><strong>SMS alerts</strong> — long-press message → Share → Save bank notification</div></div>
-        <div class="insight"><div class="insight-dot" style="background:#4ecdc4"></div><div class="insight-text"><strong>Push notifications</strong> — swipe down banner → share icon → Save bank notification</div></div>
-        <div class="insight"><div class="insight-dot" style="background:#fbbf24"></div><div class="insight-text"><strong>Email alerts</strong> — open email → share icon → Save bank notification</div></div>
+        <div class="card-title">Holdings</div>
+        <div id="holdings-list"><div class="empty"><div class="empty-icon">📈</div><p>Add your stock holdings above.<br>Supports stocks, ETFs, and crypto.</p></div></div>
       </div>
+
+      <div class="card">
+        <div class="card-title">P&amp;L breakdown</div>
+        <div id="pl-bars"><div class="empty"><div class="empty-icon">💹</div><p>Add holdings to see profit &amp; loss.</p></div></div>
+      </div>
+    </div>
+
+    <!-- AI INSIGHTS -->
+    <div id="tab-insights" class="panel">
+      <div class="card">
+        <div class="card-title">AI financial analysis</div>
+        <div id="insights-body"><div class="empty"><div class="empty-icon">🤖</div><p>Get a full analysis of your spending,<br>savings, and investments.</p></div></div>
+      </div>
+      <div class="loader" id="insight-loader"><div class="spinner"></div>Analyzing your finances…</div>
+      <button class="btn btn-primary full-btn" onclick="getInsights()">Analyze my finances ↗</button>
     </div>
 
     <!-- SETTINGS -->
     <div id="tab-settings" class="panel">
       <div class="card">
         <div class="card-title">Anthropic API key</div>
-        <p class="hint-text">Required for AI parsing and insights. Your key is stored only in your browser — never sent anywhere except the Anthropic API.</p>
-        <input type="password" id="api-key-input" placeholder="sk-ant-…" style="width:100%;margin-top:10px">
+        <p class="hint-text">Stored only in your browser. Never sent anywhere except Anthropic's API.</p>
+        <input type="password" id="api-key-input" placeholder="sk-ant-…" style="margin-top:10px">
         <div class="btn-row" style="margin-top:10px">
           <button class="btn btn-primary" onclick="saveApiKey()">Save key</button>
           <button class="btn" onclick="clearApiKey()">Clear key</button>
@@ -177,17 +268,23 @@ Examples:
         <div id="key-status" class="mono-text" style="margin-top:8px"></div>
       </div>
       <div class="card">
-        <div class="card-title">How to get an API key</div>
-        <div class="step"><div class="step-num">1</div><div class="step-text">Go to <a href="https://console.anthropic.com" target="_blank" class="link">console.anthropic.com</a> and sign up or log in.</div></div>
-        <div class="step"><div class="step-num">2</div><div class="step-text">Click <code>API Keys</code> in the left sidebar → <code>Create Key</code>.</div></div>
-        <div class="step"><div class="step-num">3</div><div class="step-text">Copy the key and paste it above. It starts with <code>sk-ant-</code>.</div></div>
-        <div class="step"><div class="step-num">4</div><div class="step-text">The free tier includes enough credits to parse hundreds of notifications per month.</div></div>
+        <div class="card-title">Change PIN</div>
+        <p class="hint-text">Clears your current PIN so you can set a new one on next reload.</p>
+        <div style="margin-top:10px">
+          <button class="btn danger-btn" onclick="resetPin()">Reset PIN</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Get Anthropic API key</div>
+        <div class="step"><div class="step-num">1</div><div class="step-text">Go to <a href="https://console.anthropic.com" target="_blank" class="link">console.anthropic.com</a> → sign up free</div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-text">Click <code>API Keys</code> → <code>Create Key</code></div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-text">Copy and paste it above. Starts with <code>sk-ant-</code></div></div>
       </div>
     </div>
-  </div>
+
+  </div><!-- /main-app -->
 
   <div class="toast" id="toast"></div>
   <script src="app.js"></script>
-  </div><!-- /main-app -->
 </body>
 </html>
