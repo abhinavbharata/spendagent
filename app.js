@@ -283,15 +283,45 @@ function renderInvestments(){
 }
 
 function addInvestment(){
-  const ticker=(document.getElementById('i-ticker').value||'').trim().toUpperCase();
-  const shares=parseFloat(document.getElementById('i-shares').value);
-  const cost  =parseFloat(document.getElementById('i-cost-basis').value);
-  const curr  =parseFloat(document.getElementById('i-current').value);
-  if(!ticker||!shares||!cost||!curr){showToast('Fill in all fields',true);return;}
-  investments.push({ticker,shares,costBasis:cost,currentPrice:curr,id:Date.now()});
-  saveAll(); renderInvestments();
-  ['i-ticker','i-shares','i-cost-basis','i-current'].forEach(id=>document.getElementById(id).value='');
-  showToast('✓ '+ticker+' added');
+  (async ()=>{
+    const ticker=(document.getElementById('i-ticker').value||'').trim().toUpperCase();
+    const shares=parseFloat(document.getElementById('i-shares').value);
+    const cost  =parseFloat(document.getElementById('i-cost-basis').value);
+    if(!ticker||!shares||!cost){showToast('Fill in all fields',true);return;}
+    showToast('Fetching current price for '+ticker+'…');
+    const price = await fetchCurrentPrice(ticker);
+    if(price===null){showToast('Could not fetch price for '+ticker+', try again',true);return;}
+    investments.push({ticker,shares,costBasis:cost,currentPrice:price,id:Date.now()});
+    saveAll(); renderInvestments();
+    ['i-ticker','i-shares','i-cost-basis'].forEach(id=>{const el=document.getElementById(id); if(el)el.value='';});
+    showToast('✓ '+ticker+' added');
+  })();
+}
+
+// Fetch current price from Yahoo Finance public endpoint. Returns number or null.
+async function fetchCurrentPrice(ticker){
+  if(!ticker) return null;
+  try{
+    const url = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols='+encodeURIComponent(ticker);
+    const res = await fetch(url);
+    if(!res.ok) return null;
+    const data = await res.json();
+    const q = data?.quoteResponse?.result?.[0];
+    if(!q) return null;
+    const p = q.regularMarketPrice ?? q.postMarketPrice ?? q.preMarketPrice ?? q.regularMarketPreviousClose;
+    return (typeof p === 'number') ? p : (p?parseFloat(p):null);
+  }catch(e){return null;}
+}
+
+// Refresh all holdings' current prices (called on load and periodically)
+async function refreshPrices(){
+  if(!investments.length) return;
+  let changed=false;
+  for(let i=0;i<investments.length;i++){
+    const p = await fetchCurrentPrice(investments[i].ticker);
+    if(p!=null && investments[i].currentPrice !== p){ investments[i].currentPrice = p; changed = true; }
+  }
+  if(changed){ saveAll(); renderInvestments(); }
 }
 
 function removeHolding(idx){
@@ -472,7 +502,7 @@ Return [] if nothing found.`,
     if(!res.ok)throw new Error('API error '+res.status);
     const data=await res.json();
     const raw=(data.content?.[0]?.text||'[]').replace(/```json|```/g,'').trim();
-    const parsed=JSON.parse(raw);
+    const parsed = safeJsonParse(raw);
     if(!Array.isArray(parsed)||!parsed.length){showToast('No data found in SoFi CSV',true);}
     else{
       parsed.forEach(t=>{t.id=Date.now()+'-'+Math.random().toString(36).slice(2);});
@@ -512,7 +542,7 @@ Return [].`,
     if(!res.ok)throw new Error('API error '+res.status);
     const data=await res.json();
     const raw=(data.content?.[0]?.text||'[]').replace(/```json|```/g,'').trim();
-    const parsed=JSON.parse(raw);
+    const parsed = safeJsonParse(raw);
     if(!Array.isArray(parsed)||!parsed.length){showToast('No transactions found',true);}
     else{
       parsed.forEach(t=>{t.id=Date.now()+'-'+Math.random().toString(36).slice(2);});
@@ -562,7 +592,7 @@ Give 6 insights covering: top spending categories, savings rate vs spending, inv
     if(!res.ok)throw new Error('API error '+res.status);
     const data=await res.json();
     const raw=(data.content?.[0]?.text||'[]').replace(/```json|```/g,'').trim();
-    const insights=JSON.parse(raw);
+    const insights = safeJsonParse(raw);
     document.getElementById('insights-body').innerHTML=insights.map(i=>
       `<div class="insight"><div class="insight-dot" style="background:${esc(i.color)}"></div><div class="insight-text">${i.text}</div></div>`
     ).join('');
@@ -592,6 +622,24 @@ function clearAll(){
 function fmt(n){return '$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function setText(id,v){const el=document.getElementById(id);if(el)el.textContent=v;}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+// Robust JSON parsing: try raw parse, else extract first JSON object/array block
+function safeJsonParse(raw){
+  if(!raw || typeof raw !== 'string') return null;
+  try { return JSON.parse(raw); } catch(e) {}
+  const first = raw.search(/[\{\[]/);
+  if(first === -1) return null;
+  const open = raw[first];
+  const close = open === '{' ? '}' : ']';
+  let depth = 0;
+  for(let i = first; i < raw.length; i++){
+    if(raw[i] === open) depth++;
+    else if(raw[i] === close){ depth--; if(depth === 0){
+      const candidate = raw.slice(first, i+1);
+      try { return JSON.parse(candidate); } catch(e) { return null; }
+    }}
+  }
+  return null;
+}
 function showToast(msg,isError=false){
   const t=document.getElementById('toast');
   t.textContent=msg; t.style.borderColor=isError?'#f87171':'#4ade80'; t.style.color=isError?'#f87171':'#4ade80';
@@ -627,4 +675,4 @@ function simpleHash(s){let h=0x811c9dc5;for(let i=0;i<s.length;i++){h^=s.charCod
 function resetPin(){if(!confirm('Reset PIN?'))return;localStorage.removeItem(PIN_KEY);sessionStorage.removeItem(SESSION_KEY);showToast('PIN reset — reload to set a new one');}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded',()=>{loadData();initPin();});
+document.addEventListener('DOMContentLoaded',()=>{loadData();initPin();refreshPrices();setInterval(refreshPrices,5*60*1000);});
