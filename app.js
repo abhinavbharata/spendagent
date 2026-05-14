@@ -301,54 +301,142 @@ function removeHolding(idx){
   showToast('Holding removed');
 }
 
-// ── BofA CSV Parser ───────────────────────────────────────────────────────────
-async function handleBofaCSV(input){
-  const file=input.files[0]; if(!file)return;
-  const text=await file.text();
-  const apiKey=getApiKey();
-  if(!apiKey){showToast('Add your API key in Settings first',true);return;}
+// ── BofA CSV Parser — pure JS, no AI needed for parsing ─────────────────────
+function parseBofaCSVText(text) {
+  // Clean merchant name from BofA raw description
+  function cleanMerchant(desc) {
+    return desc
+      .replace(/\d{2}\/\d{2}(\s+(PURCHASE|MOBILE PURCHASE|PMNT SENT|WITHDRWL))?/gi, '')
+      .replace(/(PURCHASE|MOBILE|PMNT SENT|WITHDRWL|WEB|PPD|ACH)/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/DES:.*$/i, '')
+      .replace(/ID:.*$/i, '')
+      .replace(/INDN:.*$/i, '')
+      .replace(/CO ID:.*$/i, '')
+      .replace(/Conf#\s*\S+/gi, '')
+      .replace(/XXXXX\w*/gi, '')
+      .trim();
+  }
 
-  const loader=document.getElementById('csv-loader');
+  // Categorize based on cleaned merchant name
+  function categorize(desc, isCredit) {
+    if (isCredit) {
+      if (/zelle.*from|payment from/i.test(desc)) return 'Reimbursement';
+      if (/payroll|salary|l&t|direct dep/i.test(desc)) return 'Income';
+      if (/tax|refund|reversal|cashback/i.test(desc)) return 'Other';
+      if (/transfer|sofi|zolve/i.test(desc)) return 'Transfer';
+      return 'Other';
+    }
+    const d = desc.toLowerCase();
+    if (/restaurant|food|pizza|burger|taco|sushi|grill|cafe|coffee|starbucks|dunkin|donut|bakery|diner|kitchen|bistro|bbq|wings|chicken|wingstop|mcdonalds|subway|chipotle|chick|raising cane|zaxby|cava|beyond dosai|salsaritas|huey|nekter|mama birria|chuy/i.test(d)) return 'Dining';
+    if (/walmart|wal-mart|target|costco|kroger|aldi|grocery|grocer|patel|indian|halal|holyland|radha|whole food|trader joe|publix|food lion|fresh market/i.test(d)) return 'Groceries';
+    if (/shell|exxon|chevron|bp|mobil|gas|spinx|qt |costco gas|fuel|lyft|uber|parking|7-eleven/i.test(d)) return 'Transport';
+    if (/amazon|best buy|walmart|target|macys|old navy|lowes|home depot|dollar|costco whse|apple |remitly|lemfi|shopping/i.test(d)) return 'Shopping';
+    if (/health|pharmacy|cvs|walgreen|doctor|dental|medical|hospital|clinic|vagaro|regis|salon|hair/i.test(d)) return 'Health';
+    if (/t-mobile|tmobile|at&t|verizon|sprint|internet|comcast|xfinity|electric|water|utility|wuvisaaft/i.test(d)) return 'Utilities';
+    if (/netflix|spotify|hulu|disney|movie|theater|cinema|ticket|concert|apple cash/i.test(d)) return 'Entertainment';
+    if (/zelle|transfer|sofi|discover|launch serv|wells fargo|robinhood|zolve|remit|lemfi/i.test(d)) return 'Transfer';
+    return 'Other';
+  }
+
+  // Convert MM/DD/YYYY to YYYY-MM-DD
+  function fmtDate(d) {
+    const m = d.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    return m ? `${m[3]}-${m[1]}-${m[2]}` : d;
+  }
+
+  // Parse amount — remove commas and quotes, handle negatives
+  function parseAmt(s) {
+    if (!s) return null;
+    const cleaned = s.replace(/[",]/g, '').trim();
+    return cleaned === '' ? null : parseFloat(cleaned);
+  }
+
+  const rows = [];
+  const lines = text.split('\n');
+  let headerIdx = -1;
+
+  // Find the transaction header row
+  for (let i = 0; i < lines.length; i++) {
+    if (/^date[,	]/i.test(lines[i].trim())) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) return [];
+
+  const headers = lines[headerIdx].split(',').map(h => h.replace(/"/g,'').trim().toLowerCase());
+  const dateCol = headers.findIndex(h => h === 'date');
+  const descCol = headers.findIndex(h => h.includes('description') || h.includes('desc'));
+  const amtCol  = headers.findIndex(h => h === 'amount');
+  const balCol  = headers.findIndex(h => h.includes('running') || h.includes('bal'));
+
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    // Parse CSV line respecting quoted fields
+    const cols = [];
+    let cur = '', inQ = false;
+    for (let c = 0; c < line.length; c++) {
+      if (line[c] === '"') { inQ = !inQ; }
+      else if (line[c] === ',' && !inQ) { cols.push(cur); cur = ''; }
+      else cur += line[c];
+    }
+    cols.push(cur);
+
+    const dateRaw = cols[dateCol] || '';
+    const descRaw = cols[descCol] || '';
+    const amtRaw  = cols[amtCol]  || '';
+    const balRaw  = cols[balCol]  || '';
+
+    if (!dateRaw.match(/\d{2}\/\d{2}\/\d{4}/)) continue;
+    const amt = parseAmt(amtRaw);
+    if (amt === null || isNaN(amt) || amt === 0) continue;
+
+    // Skip summary rows (beginning/ending balance)
+    if (/beginning balance|ending balance/i.test(descRaw)) continue;
+
+    const isCredit = amt > 0;
+    const merchant = cleanMerchant(descRaw) || descRaw.slice(0, 40);
+    const category = categorize(descRaw, isCredit);
+    const balance  = parseAmt(balRaw) || 0;
+
+    rows.push({
+      id: Date.now() + '-' + Math.random().toString(36).slice(2),
+      date: fmtDate(dateRaw),
+      merchant,
+      amount: Math.abs(amt),
+      type: isCredit ? 'credit' : 'debit',
+      category,
+      balance
+    });
+  }
+  return rows;
+}
+
+async function handleBofaCSV(input) {
+  const file = input.files[0]; if (!file) return;
+  const text = await file.text();
+  const loader = document.getElementById('csv-loader');
   loader.classList.add('active');
 
-  try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:4000,
-        system:`You are a bank CSV parser for Bank of America statements. Parse ALL rows and return ONLY a JSON array — no markdown, no explanation.
-
-Each transaction object:
-- merchant: string (clean description, remove codes/numbers)
-- amount: number (positive float)
-- date: string YYYY-MM-DD
-- type: "debit" (money out — purchases, payments, withdrawals) or "credit" (money in — deposits, refunds, Zelle received, transfers in)
-- category: for debits: Dining/Groceries/Transport/Shopping/Health/Utilities/Entertainment/Transfer/Other. For credits: Reimbursement/Income/Transfer/Other
-
-BofA CSV columns are typically: Date, Description, Amount, Running Bal.
-Negative amounts = debit (money out). Positive amounts = credit (money in).
-Return [] if no transactions found.`,
-        messages:[{role:'user',content:`Parse this BofA CSV:\n\n${text.slice(0,12000)}`}]
-      })
-    });
-    if(!res.ok)throw new Error('API error '+res.status);
-    const data=await res.json();
-    const raw=(data.content?.[0]?.text||'[]').replace(/```json|```/g,'').trim();
-    const parsed=JSON.parse(raw);
-    if(!Array.isArray(parsed)||!parsed.length){showToast('No transactions found in CSV',true);}
-    else{
-      parsed.forEach(t=>{t.id=Date.now()+'-'+Math.random().toString(36).slice(2);});
-      transactions=[...transactions,...parsed];
+  try {
+    const parsed = parseBofaCSVText(text);
+    if (!parsed.length) {
+      showToast('No transactions found — check the CSV format', true);
+    } else {
+      // Deduplicate by date+merchant+amount
+      const existing = new Set(transactions.map(t => t.date+'|'+t.merchant+'|'+t.amount));
+      const fresh = parsed.filter(t => !existing.has(t.date+'|'+t.merchant+'|'+t.amount));
+      transactions = [...transactions, ...fresh];
       saveAll(); renderAll();
-      const d=parsed.filter(t=>t.type==='debit').length;
-      const c=parsed.filter(t=>t.type==='credit').length;
-      showToast(`✓ ${parsed.length} transactions: ${d} debits, ${c} credits`);
+      const d = fresh.filter(t => t.type === 'debit').length;
+      const c = fresh.filter(t => t.type === 'credit').length;
+      showToast(`✓ ${fresh.length} new transactions: ${d} debits, ${c} credits`);
     }
-  }catch(e){showToast('Error: '+(e.message||'Try again'),true);}
+  } catch(e) {
+    showToast('Error: ' + (e.message || 'Try again'), true);
+  }
   loader.classList.remove('active');
-  input.value='';
+  input.value = '';
 }
 
 // ── SoFi CSV Parser ───────────────────────────────────────────────────────────
